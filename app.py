@@ -23,12 +23,15 @@ def parse_questions(text: str):
 
 @st.cache_data(show_spinner=False)
 def load_default_questions():
-    try:
-        with open("ox문제.txt", "r", encoding="utf-8") as f:
-            text = f.read()
-        return parse_questions(text)
-    except Exception:
-        return []
+    # utf-8 또는 utf-8-sig 모두 시도
+    for enc in ("utf-8", "utf-8-sig"):
+        try:
+            with open("ox문제.txt", "r", encoding=enc) as f:
+                text = f.read()
+            return parse_questions(text)
+        except Exception:
+            continue
+    return []
 
 # -----------------------------
 # 세션 상태 초기화
@@ -56,7 +59,8 @@ init_state()
 # -----------------------------
 # 스타일 (CSS)
 # -----------------------------
-st.markdown("""
+st.markdown(
+    """
     <style>
     .quiz-card {
         background-color: #ffffff;
@@ -68,25 +72,19 @@ st.markdown("""
     }
     .quiz-question {
         font-size: 1.3rem;
-        font-weight: bold;
-        margin-bottom: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
     }
     .stButton button {
         height: 3rem;
-        font-size: 1.2rem;
-        font-weight: bold;
+        font-size: 1.1rem;
+        font-weight: 700;
         border-radius: 0.7rem;
     }
-    .btn-o button {
-        background-color: #2ecc71 !important;
-        color: white !important;
-    }
-    .btn-x button {
-        background-color: #e74c3c !important;
-        color: white !important;
-    }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # -----------------------------
 # 사이드바
@@ -95,7 +93,10 @@ st.sidebar.title("⚙️ 설정")
 uploaded = st.sidebar.file_uploader("퀴즈 텍스트 업로드", type=["txt"])
 
 if uploaded is not None:
-    text = uploaded.read().decode("utf-8")
+    try:
+        text = uploaded.read().decode("utf-8")
+    except UnicodeDecodeError:
+        text = uploaded.read().decode("utf-8-sig", errors="ignore")
     pool = parse_questions(text)
 else:
     pool = load_default_questions()
@@ -121,8 +122,21 @@ def start_quiz():
     st.session_state.feedback = None
     st.session_state.started = True
 
+def reset_all():
+    st.session_state.started = False
+    st.session_state.order = []
+    st.session_state.current = 0
+    st.session_state.answers = {}
+    st.session_state.wrong = []
+    st.session_state.submitted = False
+    st.session_state.retry_mode = False
+    st.session_state.feedback = None
+
 if st.sidebar.button("🚀 시작"):
     start_quiz()
+if st.sidebar.button("🔁 초기화"):
+    reset_all()
+    st.rerun()
 
 # -----------------------------
 # 메인 화면
@@ -134,67 +148,97 @@ if not st.session_state.started:
     st.stop()
 
 order = st.session_state.order
-idx = st.session_state.order[st.session_state.current]
+total_in_quiz = len(order)
+
+# ✅ 결과/종료 가드 (마지막 문항을 풀고 난 후 인덱스 에러 방지)
+if st.session_state.submitted or st.session_state.current >= total_in_quiz:
+    st.session_state.submitted = True  # 보수적 설정
+
+    # 결과 요약
+    rows, correct_cnt = [], 0
+    for i, qidx in enumerate(order, start=1):
+        qtext = pool[qidx]["q"]
+        correct = pool[qidx]["a"]
+        user = st.session_state.answers.get(qidx, "")
+        ok = (user == correct)
+        correct_cnt += int(ok)
+        rows.append(
+            {
+                "No.": i,
+                "문제": qtext,
+                "정답": correct,
+                "내 답": user if user else "무응답",
+                "판정": "✅ 정답" if ok else "❌ 오답",
+            }
+        )
+
+    score_pct = round((correct_cnt / max(1, total_in_quiz)) * 100, 1)
+    st.success(f"🎉 퀴즈 완료! 점수: **{correct_cnt} / {total_in_quiz}** ({score_pct}%)")
+    st.progress(correct_cnt / max(1, total_in_quiz))
+
+    if rows:
+        df = pd.DataFrame(rows)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        csv = df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📥 결과 CSV 다운로드", csv, file_name="ox_quiz_results.csv", mime="text/csv")
+
+    # 오답 다시 풀기 / 처음부터
+    if not st.session_state.retry_mode:
+        wrong_list = [idx for idx in order if st.session_state.answers.get(idx, "") != pool[idx]["a"]]
+        if wrong_list:
+            if st.button("❗ 오답만 다시 풀기"):
+                st.session_state.order = wrong_list
+                st.session_state.current = 0
+                st.session_state.answers = {}
+                st.session_state.wrong = []
+                st.session_state.retry_mode = True
+                st.session_state.submitted = False
+                st.rerun()
+        else:
+            st.info("완벽해요! 오답이 없습니다.")
+
+    if st.button("🔄 처음부터 다시"):
+        start_quiz()
+        st.rerun()
+
+    st.stop()  # ✅ 결과 화면에서 종료
+
+# ---- 여기서부터는 실제 문제 화면 ----
+idx = order[st.session_state.current]
 q = pool[idx]["q"]
 a = pool[idx]["a"]
 
-st.progress((st.session_state.current + 1) / len(order))
-st.markdown(f"<div class='quiz-card'><div class='quiz-question'>문제 {st.session_state.current+1} / {len(order)}<br><br>{q}</div></div>", unsafe_allow_html=True)
+st.progress((st.session_state.current + 1) / total_in_quiz)
+st.markdown(
+    f"<div class='quiz-card'><div class='quiz-question'>문제 {st.session_state.current+1} / {total_in_quiz}</div>"
+    f"<div style='font-size:1.15rem; margin-top:0.8rem;'>{q}</div></div>",
+    unsafe_allow_html=True,
+)
 
-# -----------------------------
-# 선택 버튼 (O, X)
-# -----------------------------
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("⭕ O", key=f"O_{idx}"):
+# 선택 버튼 (O / X)
+c1, c2 = st.columns(2)
+with c1:
+    if st.button("⭕", key=f"O_{idx}", use_container_width=True):
         st.session_state.answers[idx] = "O"
-        if "O" == a:
-            st.session_state.feedback = "✅ 정답입니다!"
-        else:
-            st.session_state.feedback = f"❌ 오답! 정답은 {a}"
-            if idx not in st.session_state.wrong:
-                st.session_state.wrong.append(idx)
+        st.session_state.feedback = "✅ 정답입니다!" if a == "O" else f"❌ 오답! 정답은 {a}"
+        if a != "O" and idx not in st.session_state.wrong:
+            st.session_state.wrong.append(idx)
         st.rerun()
 
-with col2:
-    if st.button("❌ X", key=f"X_{idx}"):
+with c2:
+    if st.button("❌", key=f"X_{idx}", use_container_width=True):
         st.session_state.answers[idx] = "X"
-        if "X" == a:
-            st.session_state.feedback = "✅ 정답입니다!"
-        else:
-            st.session_state.feedback = f"❌ 오답! 정답은 {a}"
-            if idx not in st.session_state.wrong:
-                st.session_state.wrong.append(idx)
+        st.session_state.feedback = "✅ 정답입니다!" if a == "X" else f"❌ 오답! 정답은 {a}"
+        if a != "X" and idx not in st.session_state.wrong:
+            st.session_state.wrong.append(idx)
         st.rerun()
 
-# -----------------------------
-# 정답 피드백 표시 후 자동 다음 문제
-# -----------------------------
+# 피드백 → 자동 다음 문제
 if st.session_state.feedback:
     st.info(st.session_state.feedback)
-    # 1초 후 다음 문제로
-    time.sleep(1)
+    time.sleep(1)  # 짧은 대기 후
     st.session_state.feedback = None
     st.session_state.current += 1
-    if st.session_state.current >= len(order):
+    if st.session_state.current >= total_in_quiz:
         st.session_state.submitted = True
     st.rerun()
-
-# -----------------------------
-# 결과 화면
-# -----------------------------
-if st.session_state.submitted:
-    if st.session_state.wrong and not st.session_state.retry_mode:
-        st.warning(f"오답이 {len(st.session_state.wrong)}개 있습니다. 다시 풀어보세요!")
-        if st.button("❗ 오답만 다시 풀기"):
-            st.session_state.order = st.session_state.wrong
-            st.session_state.current = 0
-            st.session_state.wrong = []
-            st.session_state.retry_mode = True
-            st.session_state.submitted = False
-            st.rerun()
-    else:
-        score = sum(1 for i in st.session_state.answers if pool[i]["a"] == st.session_state.answers[i])
-        st.success("🎉 퀴즈 완료!")
-        st.write(f"최종 점수: **{score} / {len(order)}**")
-        st.progress(score/len(order))
