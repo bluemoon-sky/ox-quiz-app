@@ -1,5 +1,6 @@
 import re
 import random
+import time
 import pandas as pd
 import streamlit as st
 
@@ -41,14 +42,14 @@ def init_state():
         st.session_state.current = 0
     if "answers" not in st.session_state:
         st.session_state.answers = {}
-    if "checked" not in st.session_state:
-        st.session_state.checked = False
     if "wrong" not in st.session_state:
         st.session_state.wrong = []
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
     if "retry_mode" not in st.session_state:
         st.session_state.retry_mode = False
+    if "feedback" not in st.session_state:
+        st.session_state.feedback = None
 
 init_state()
 
@@ -72,7 +73,7 @@ st.markdown("""
     }
     .stButton button {
         height: 3rem;
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         font-weight: bold;
         border-radius: 0.7rem;
     }
@@ -82,10 +83,6 @@ st.markdown("""
     }
     .btn-x button {
         background-color: #e74c3c !important;
-        color: white !important;
-    }
-    .btn-next button {
-        background-color: #3498db !important;
         color: white !important;
     }
     </style>
@@ -118,10 +115,10 @@ def start_quiz():
     st.session_state.order = indices[:num_q]
     st.session_state.current = 0
     st.session_state.answers = {}
-    st.session_state.checked = False
     st.session_state.wrong = []
     st.session_state.submitted = False
     st.session_state.retry_mode = False
+    st.session_state.feedback = None
     st.session_state.started = True
 
 if st.sidebar.button("🚀 시작"):
@@ -137,41 +134,51 @@ if not st.session_state.started:
     st.stop()
 
 order = st.session_state.order
-idx = order[st.session_state.current]
+idx = st.session_state.order[st.session_state.current]
 q = pool[idx]["q"]
 a = pool[idx]["a"]
 
 st.progress((st.session_state.current + 1) / len(order))
 st.markdown(f"<div class='quiz-card'><div class='quiz-question'>문제 {st.session_state.current+1} / {len(order)}<br><br>{q}</div></div>", unsafe_allow_html=True)
 
-# 버튼 배치
+# -----------------------------
+# 선택 버튼 (O, X)
+# -----------------------------
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("⭕ O", key=f"O_{idx}", use_container_width=True):
+    if st.button("⭕ O", key=f"O_{idx}"):
         st.session_state.answers[idx] = "O"
-with col2:
-    if st.button("❌ X", key=f"X_{idx}", use_container_width=True):
-        st.session_state.answers[idx] = "X"
-
-# 확인 / 다음
-if idx in st.session_state.answers and not st.session_state.checked:
-    if st.button("정답 확인", type="primary"):
-        choice = st.session_state.answers[idx]
-        st.session_state.checked = True
-        if choice == a:
-            st.success("✅ 정답입니다!")
+        if "O" == a:
+            st.session_state.feedback = "✅ 정답입니다!"
         else:
-            st.error(f"❌ 오답! 정답은 {a}")
+            st.session_state.feedback = f"❌ 오답! 정답은 {a}"
             if idx not in st.session_state.wrong:
                 st.session_state.wrong.append(idx)
-
-if st.session_state.checked:
-    if st.button("➡️ 다음 문제", key=f"next_{idx}"):
-        st.session_state.current += 1
-        st.session_state.checked = False
-        if st.session_state.current >= len(order):
-            st.session_state.submitted = True
         st.rerun()
+
+with col2:
+    if st.button("❌ X", key=f"X_{idx}"):
+        st.session_state.answers[idx] = "X"
+        if "X" == a:
+            st.session_state.feedback = "✅ 정답입니다!"
+        else:
+            st.session_state.feedback = f"❌ 오답! 정답은 {a}"
+            if idx not in st.session_state.wrong:
+                st.session_state.wrong.append(idx)
+        st.rerun()
+
+# -----------------------------
+# 정답 피드백 표시 후 자동 다음 문제
+# -----------------------------
+if st.session_state.feedback:
+    st.info(st.session_state.feedback)
+    # 1초 후 다음 문제로
+    time.sleep(1)
+    st.session_state.feedback = None
+    st.session_state.current += 1
+    if st.session_state.current >= len(order):
+        st.session_state.submitted = True
+    st.rerun()
 
 # -----------------------------
 # 결과 화면
