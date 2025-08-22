@@ -53,10 +53,49 @@ def init_state():
 init_state()
 
 # -----------------------------
+# 스타일 (CSS)
+# -----------------------------
+st.markdown("""
+    <style>
+    .quiz-card {
+        background-color: #ffffff;
+        padding: 2rem;
+        border-radius: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .quiz-question {
+        font-size: 1.3rem;
+        font-weight: bold;
+        margin-bottom: 1.5rem;
+    }
+    .stButton button {
+        height: 3rem;
+        font-size: 1.1rem;
+        font-weight: bold;
+        border-radius: 0.7rem;
+    }
+    .btn-o button {
+        background-color: #2ecc71 !important;
+        color: white !important;
+    }
+    .btn-x button {
+        background-color: #e74c3c !important;
+        color: white !important;
+    }
+    .btn-next button {
+        background-color: #3498db !important;
+        color: white !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# -----------------------------
 # 사이드바
 # -----------------------------
 st.sidebar.title("⚙️ 설정")
-uploaded = st.sidebar.file_uploader("퀴즈 텍스트 업로드 (예: '질문 (O)')", type=["txt"])
+uploaded = st.sidebar.file_uploader("퀴즈 텍스트 업로드", type=["txt"])
 
 if uploaded is not None:
     text = uploaded.read().decode("utf-8")
@@ -69,7 +108,7 @@ if total == 0:
     st.error("문제를 불러오지 못했습니다. `ox문제.txt`를 확인하세요.")
     st.stop()
 
-num_q = st.sidebar.slider("퀴즈 문제 수", min_value=5, max_value=total, value=min(20, total))
+num_q = st.sidebar.slider("퀴즈 문제 수", min_value=5, max_value=total, value=min(10, total))
 shuffle = st.sidebar.checkbox("문항 섞기", value=True)
 
 def start_quiz():
@@ -91,7 +130,8 @@ if st.sidebar.button("🚀 시작"):
 # -----------------------------
 # 메인 화면
 # -----------------------------
-st.title("✅ OX 퀴즈")
+st.title("🎯 OX 퀴즈")
+
 if not st.session_state.started:
     st.info("좌측에서 문제 수를 선택한 뒤 **시작** 버튼을 눌러주세요.")
     st.stop()
@@ -102,13 +142,21 @@ q = pool[idx]["q"]
 a = pool[idx]["a"]
 
 st.progress((st.session_state.current + 1) / len(order))
-st.subheader(f"문제 {st.session_state.current + 1} / {len(order)}")
-choice = st.radio(q, ["O", "X"], key=f"q_{idx}", horizontal=True)
+st.markdown(f"<div class='quiz-card'><div class='quiz-question'>문제 {st.session_state.current+1} / {len(order)}<br><br>{q}</div></div>", unsafe_allow_html=True)
 
+# 버튼 배치
 col1, col2 = st.columns(2)
 with col1:
-    if st.button("확인"):
-        st.session_state.answers[idx] = choice
+    if st.button("⭕ O", key=f"O_{idx}", use_container_width=True):
+        st.session_state.answers[idx] = "O"
+with col2:
+    if st.button("❌ X", key=f"X_{idx}", use_container_width=True):
+        st.session_state.answers[idx] = "X"
+
+# 확인 / 다음
+if idx in st.session_state.answers and not st.session_state.checked:
+    if st.button("정답 확인", type="primary"):
+        choice = st.session_state.answers[idx]
         st.session_state.checked = True
         if choice == a:
             st.success("✅ 정답입니다!")
@@ -117,8 +165,8 @@ with col1:
             if idx not in st.session_state.wrong:
                 st.session_state.wrong.append(idx)
 
-with col2:
-    if st.button("다음 ➡️", disabled=not st.session_state.checked):
+if st.session_state.checked:
+    if st.button("➡️ 다음 문제", key=f"next_{idx}"):
         st.session_state.current += 1
         st.session_state.checked = False
         if st.session_state.current >= len(order):
@@ -139,6 +187,7 @@ if st.session_state.submitted:
             st.session_state.submitted = False
             st.rerun()
     else:
-        st.success("퀴즈 완료! 모든 문제를 풀었습니다.")
         score = sum(1 for i in st.session_state.answers if pool[i]["a"] == st.session_state.answers[i])
+        st.success("🎉 퀴즈 완료!")
         st.write(f"최종 점수: **{score} / {len(order)}**")
+        st.progress(score/len(order))
