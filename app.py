@@ -152,15 +152,15 @@ nav1, nav2, nav3 = st.columns(3)
 with nav1:
     if st.button("⬅️ 이전", disabled=st.session_state.current == 0, use_container_width=True):
         st.session_state.current -= 1
-        st.experimental_rerun()
+        st.rerun()
 with nav2:
     if st.button("제출", disabled=st.session_state.submitted, use_container_width=True):
         st.session_state.submitted = True
-        st.experimental_rerun()
+        st.rerun()
 with nav3:
     if st.button("다음 ➡️", disabled=st.session_state.current >= len(order) - 1, use_container_width=True):
         st.session_state.current += 1
-        st.experimental_rerun()
+        st.rerun()
 
 # -----------------------------
 # Results
