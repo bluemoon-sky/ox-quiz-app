@@ -230,10 +230,10 @@ def handle(choice):
     st.rerun()
 
 with c1:
-    if st.button("⭕ O", use_container_width=True):
+    if st.button("⭕", use_container_width=True):
         handle("O")
 with c2:
-    if st.button("❌ X", use_container_width=True):
+    if st.button("❌", use_container_width=True):
         handle("X")
 
 # 피드백 + 해설 + 자동 넘김
